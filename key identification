@@ -1,0 +1,356 @@
+import cv2
+import numpy as np
+import statistics
+from operator import itemgetter
+
+# input
+image = cv2.imread('Piano_Keyboard.jpg')
+ycrcb_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
+
+# filter thresholds
+lower_bound = np.array([ 100, 0, 0], dtype="uint8")
+upper_bound = np.array([ 255, 145, 255], dtype="uint8")
+
+# Create a binary mask based on the color filter thresholds
+mask = cv2.inRange(ycrcb_image, lower_bound, upper_bound)
+
+# Apply the mask to the original image to obtain the filtered image
+filtered_image = cv2.bitwise_and(image, image, mask=mask)
+
+# Display the filtered image
+cv2.imshow('Filtered Image', filtered_image)
+
+# Convert the image to grayscale
+gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+# Resize the grayscale image to 160x120 pixels
+#gray = cv2.resize(gray, (160, 120))
+
+# Binarize the resized grayscale image with a threshold of 150
+_, binarized = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+
+
+# Apply Canny edge detection to the grayscale image
+edges = cv2.Canny(binarized, 50, 150, apertureSize=3)
+
+# Find contours in the edge-detected image
+contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+# Draw the detected contours on a separate image
+contour_image = np.zeros_like(image)
+cv2.drawContours(contour_image, contours, -1, (255, 0, 255), 1)
+
+incident_pnts = []
+def contour_and_line(contour, rho, theta, image, incident_pnts):
+    distances = []
+    for point in contour:
+        x0, y0 = point[0]
+        a = np.cos(theta)
+        b = np.sin(theta)
+        x = a * rho
+        y = b * rho
+        x1 = int(x + 1000 * (-b))
+        y1 = int(y + 1000 * (a))
+        if y0<=(int)(min1 + (max1 - min1)/12):
+            cv2.circle(image, (x0, (int)(min1 + (max1 - min1)/12)), 2, (0, 255, 0), 1)  # Mark the incident points on the line
+            incident_pnts.append((x0, (int)(min1 + (max1 - min1)/12)))
+
+# Display the image with the drawn contours
+cv2.imshow('Detected Contours', contour_image)
+
+
+# Apply Hough line transform to detect lines in the image
+#lines = cv2.HoughLines(edges, 1, np.pi/180, threshold=100)
+cdst = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+cdstP = np.copy(cdst)
+
+lines = cv2.HoughLines(edges, 1, np.pi / 180, 150, None, 0, 0)
+#lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
+
+cartesian_lines = []
+angles = []
+sum=0   
+
+max1 = 0
+max2 = 0
+min1 = 250
+min2 = 250
+end = 0
+
+if lines is not None:
+        for i in range(0, len(lines)):
+            rho = lines[i][0][0]
+            theta = lines[i][0][1]
+            a = np.cos(theta)
+            b = np.sin(theta)
+            angle = np.arctan2(b, a)  # angle of the line
+            angles.append(angle)
+            sum = sum+np.abs(angle)
+            x0 = a * rho
+            y0 = b * rho
+            pt1 = (int(x0 + 1000*(-b)), int(y0 + 1000*(a)))
+            pt2 = (int(x0 - 1000*(-b)), int(y0 - 1000*(a)))
+            if max1 < pt1[1]:
+                  max1 = pt1[1]
+                  #rhoBlue = rho
+                  #thetaBlue = theta
+            if max2 < pt2[1]:
+                  max2 = pt2[1]
+                  #rhoBlue = rho
+                  #thetaBlue = theta
+            if min1 > pt1[1]:
+                  min1 = pt1[1]
+                  rhoBlue = rho
+                  thetaBlue = theta
+            if min2 > pt2[1]:
+                  min2 = pt2[1]
+                  rhoBlue = rho
+                  thetaBlue = theta
+            if end < pt2[0]:
+                  end = pt2[0]
+                  rhoBlue = rho
+                  thetaBlue = theta
+
+    
+# Iterate through contours and Hough lines to calculate distances
+for i, contour in enumerate(contours):
+    distance = contour_and_line(contour, rhoBlue, thetaBlue, image, incident_pnts)
+    #print(f"Distance between contour {i+1} and the Hough line: {distance}")
+avg = sum / len(lines)
+print("media", avg)
+
+
+#for i in range(len(incident_pnts)):
+ #    if incident_pnts[i][1] == max1:
+          
+
+# threshold for angle similarity
+angle_threshold = np.radians(2)
+
+# Identify and draw parallel lines
+for i in range(len(lines)):
+    for j in range(i + 1, len(lines)):
+        delta_angle = np.abs(angles[i] - angles[j])
+        if delta_angle < angle_threshold and angles[i]<=avg+0.6 and angles[i]>=avg-0.6 :
+            # Draw the lines on the original image
+            rho_i, theta_i = lines[i][0]
+            a_i = np.cos(theta_i)
+            b_i = np.sin(theta_i)
+            x0_i = a_i * rho_i
+            y0_i = b_i * rho_i
+            pt1_i = (int(x0_i + 1000 * (-b_i)), int(y0_i + 1000 * (a_i)))
+            pt2_i = (int(x0_i - 1000 * (-b_i)), int(y0_i - 1000 * (a_i)))
+            cv2.line(cdst, pt1_i, pt2_i, (0, 0, 255), 1)
+
+            rho_j, theta_j = lines[j][0]
+            a_j = np.cos(theta_j)
+            b_j = np.sin(theta_j)
+            x0_j = a_j * rho_j
+            y0_j = b_j * rho_j
+            pt1_j = (int(x0_j + 1000 * (-b_j)), int(y0_j + 1000 * (a_j)))
+            pt2_j = (int(x0_j - 1000 * (-b_j)), int(y0_j - 1000 * (a_j)))
+            cv2.line(cdst, pt1_j, pt2_j, (0, 255, 0), 1)
+
+# Display the image with the detected lines and valid combinations
+cv2.imshow('Keyboard Location', image)
+#cv2.imshow('Keyboard gray', edges)
+cv2.imshow("Detected Lines (in green) - Standard Hough Line Transform", cdst)
+# Key detection
+# Draw a line paralel to the one at the top
+_,cols,_ = image.shape
+tasti = []
+
+for x in incident_pnts:
+      if x[1] <  min1 + 8 and x[1] > min1 - 8:
+           tasti.append(x[0])
+tasti = list(set(tasti))
+k =0# tasti[0]
+for i in tasti:
+    if i < k + 2 and i > k - 2:
+          tasti.remove(i)
+    else:
+         k = i
+tasti.sort()
+for i in tasti:
+    if i < k + 2 and i > k - 2:
+          tasti.remove(i)
+    else:
+         k = i
+for i in tasti:
+    cv2.circle(image, (i, (int)(min1 + (max1 - min1)/12)), 2, (255, 0, 0), 1)
+cv2.imshow("tasti", image)
+
+tasti_neri = []
+tasti_bianchi =[]
+k = True
+for i in tasti:
+    if gray[(int)(min1 + (max1 - min1)/12), i - 4] > 140 and gray[(int)(min1 + (max1 - min1)/12), i + 4] > 140:
+        tasti_bianchi.append(i)
+    else: # gray[(int)(min1 + (max1 - min1)/12), i - 1] > 160 and gray[(int)(min1 + (max1 - min1)/12), i + 1] < 60:
+        tasti_neri.append(i)
+
+tasti_neri.sort()
+k = 0
+for i in tasti_neri:
+    if i < k + 2 and i > k - 2:
+          tasti_neri.remove(i)
+    else:
+         k = i
+
+
+tasti_neri = list(set(tasti_neri))
+print(len(tasti_bianchi), len(tasti_neri))
+tasti_neri.sort()
+
+# Find white ("cut") keys and mean distance between two black keys
+dist = []
+for i in range(1,len(tasti_neri) - 2):
+      dist.append(tasti_neri[i + 1] - tasti_neri[i])
+media_neri = statistics.mean(dist)
+for i in range(1,len(tasti_neri) - 2):
+      if dist[i - 1] > media_neri - 2:
+            tasti_bianchi.append(tasti_neri[i] + int(dist[i - 1] / 2))
+
+print(len(tasti_bianchi), media_neri)
+tasti_bianchi.sort()
+k = tasti_bianchi[0]
+for i in tasti_bianchi[1:]:
+    if i < k + 4 and i > k - 4:
+          tasti_bianchi.remove(i)
+    else:
+         k = i
+
+dist = []
+for i in range(len(tasti_bianchi) - 2):
+      dist.append(tasti_bianchi[i + 1] - tasti_bianchi[i])
+media_bianchi = statistics.mean(dist)
+for i in range(len(tasti_bianchi) - 1):
+     if i > len(tasti_bianchi) - 2:
+          break
+     if tasti_bianchi[i + 1] - tasti_bianchi[i] > 2 * media_bianchi - 3:
+          tasti_bianchi.insert(i + 1, tasti_bianchi[i] + media_bianchi)
+print(len(tasti_bianchi))
+
+tasti_bianchi.sort()
+k = tasti_bianchi[0]
+for i in tasti_bianchi[1:]:
+    if i < k + 2 and i > k - 2:
+          tasti_bianchi.remove(i)
+    else:
+         k = i
+print(len(tasti_bianchi))
+
+for i in tasti_bianchi:
+    cv2.line(image, (i, max1), (i, min1), (0, 0, 255), 1)
+for i in tasti_neri:
+    cv2.line(image, (i, min1), (i, int(pt2_j[1])), (0, 255, 0), 2)
+cv2.imshow("tasti bianchi", image)
+
+# Key identification
+# We cross-correlate two discrete sequences:
+# the one of the keys detected with 1 if white keys and  otherwise k_u
+# the one with the a valid sequence of keys k_v
+
+k_u = []
+k_v = []
+tasti = tasti_bianchi + tasti_neri[: : 2]
+tasti.sort()
+for i in tasti:
+    if i in tasti_bianchi:
+          k_u.append(1)
+    elif i in tasti_neri:
+         k_u.append(0)
+k_v.append(1)
+k_v.append(0)
+k_v.append(1)
+k_v.append(0)
+k_v.append(1)
+k_v.append(1)
+k_v.append(0)
+k_v.append(1)
+k_v.append(0)
+k_v.append(1)
+k_v.append(0)
+k_v.append(1)
+
+sum = 0
+k = 0
+print(k_u)
+for j in range(len(k_u) - 1):
+    bianchi_in_k_u = 0
+    sum = 0
+    for i in range(len(k_v)):
+         if i + j > len(k_u) - 1:
+              print("Couldn't detect a C")
+         sum += k_v[i] * k_u[j + i]
+         if k_u[i + j] == 1:
+            bianchi_in_k_u += 1 
+    if sum == bianchi_in_k_u:
+         do = tasti[j]
+         break
+print(do)    
+
+# Once we have detected the C we detect the other keys
+keys = []
+
+do_in_tasti_bianchi = tasti_bianchi.index(do)
+print(do_in_tasti_bianchi)
+
+for i in range(len(tasti_bianchi) - 2):
+     dict = {}
+     dict['start'] = tasti_bianchi[i]
+     dict['end'] = tasti_bianchi[i + 1]
+     if (i - do_in_tasti_bianchi) % 7 == 0:
+        dict['nota'] = 'do'
+     if (i - do_in_tasti_bianchi) % 7 == 1:
+        dict['nota'] = 're'
+     if (i - do_in_tasti_bianchi) % 7 == 2:
+        dict['nota'] = 'mi'
+     if (i - do_in_tasti_bianchi) % 7 == 3:
+        dict['nota'] = 'fa'
+     if (i - do_in_tasti_bianchi) % 7 == 4:
+        dict['nota'] = 'sol'
+     if (i - do_in_tasti_bianchi) % 7 == 5:
+        dict['nota'] = 'la'
+     if (i - do_in_tasti_bianchi) % 7 == 6:
+        dict['nota'] = 'si'
+     keys.append(dict)
+
+dod = tasti[tasti.index(do) + 1]
+dod_in_tasti_neri = tasti_neri.index(dod)
+print(dod_in_tasti_neri)
+if dod_in_tasti_neri % 2 == 0:
+     iniz = 0
+else:
+     iniz = 1
+for i in range(iniz, len(tasti_neri) - 2, 2):
+     dict = {}
+     dict['start'] = tasti_neri[i]
+     dict['end'] = tasti_neri[i + 1]
+     if (i - dod_in_tasti_neri) % 5 == 0:
+        dict['nota'] = 'dod'
+     if (i - dod_in_tasti_neri) % 5 == 1:
+        dict['nota'] = 'mib'
+     if (i - dod_in_tasti_neri) % 5 == 2:
+        dict['nota'] = 'fad'
+     if (i - dod_in_tasti_neri) % 5 == 3:
+        dict['nota'] = 'sold'
+     if (i - dod_in_tasti_neri) % 5 == 4:
+        dict['nota'] = 'sib'
+     keys.append(dict)
+
+keys = sorted(keys, key = itemgetter('start'))
+print(keys)
+print(len(keys))
+
+        
+     
+          
+
+         
+#print(tasti_neri)
+        
+         
+     
+cv2.waitKey(0)
+cv2.destroyAllWindows()
